@@ -12,7 +12,7 @@ Imager::Filter::Autocrop - Automatic crop filter for Imager.
 
 =head1 VERSION
 
-Version 1.22
+Version 1.23
 
 =head1 SYNOPSIS
 
@@ -82,7 +82,7 @@ the detected area values will be adjusted appropriately.
 
 =cut
 
-our $VERSION = '1.22';
+our $VERSION = '1.23';
 
 sub autocrop {
     my (%params) = @_;
@@ -97,8 +97,8 @@ sub autocrop {
     die "AUTOCROP_ERROR_COLOR: Color is not set correctly\n" unless defined $color;
     my ($r, $g, $b) = $color->rgba; 
     my @range = ([ $r - $fuzz, $r + $fuzz ], [ $g - $fuzz, $g + $fuzz ], [ $b - $fuzz, $b + $fuzz ]);
-    my $crop = _scan($img, \@range);
     my %original = (left => 0, right => $img->getwidth, top => 0, bottom => $img->getheight);
+    my $crop = _scan($img, \@range, \%original);
     my $bordered = 0;
     for (keys %original) { 
         if ($original{$_}) {
@@ -125,12 +125,13 @@ sub autocrop {
 } 
 
 sub _scan {
-    my ($image, $range) = @_;
-    my ($line, $top, $bottom, $left, $right, $lines) = (0, 0, 0, undef, undef, $image->getheight);
+    my ($image, $range, $original) = @_;
+    my ($line, $top, $bottom, $left, $right) = (0, 0, 0, undef, undef);
+    my ($bpoint, $rpoint) = ($original->{bottom} - 1, $original->{right} - 1);
     my ($outline, $pos, $rpos, @colors, @scanned);
     my $channels = $image->getchannels < 3 ? 0 : 2;
-    for ($line = $lines - 1; $line >= 0; $line--) {
-        ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels);
+    for ($line = $bpoint; $line >= 0; $line--) {
+        ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $rpoint);
         last if $outline;
     }
     die "AUTOCROP_ERROR_BLANK: Image looks blank\n" unless $outline;
@@ -138,7 +139,7 @@ sub _scan {
     ($left, $right) = ($pos, $rpos) if $outline;
     for ($line = 0; $line < $bottom; $line++) {
         # NB - don't use left/right boundaries here
-        ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels);
+        ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $rpoint);
         last if $outline;
     }
     $top = $line;
@@ -146,11 +147,14 @@ sub _scan {
         $left = $pos if (!defined $left or $pos < $left);
         $right = $rpos if (!defined $right or $rpos > $right);
     }
-    for ($line = $top + 1; $line < $bottom; $line++) {
-        ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $left, $right);
-        if ($outline) {
-            $left = $pos if (!defined $left or $pos < $left);
-            $right = $rpos if (!defined $right or $rpos > $right);
+    unless (defined $left and defined $right and $left == 0 and $right == $rpoint) {
+        for ($line = $top + 1; $line < $bottom; $line++) {
+            ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $rpoint, $left, $right);
+            if ($outline) {
+                $left = $pos if (!defined $left or $pos < $left);
+                $right = $rpos if (!defined $right or $rpos > $right);
+                last if (defined $left and defined $right and $left == 0 and $right == $rpoint);
+            }
         }
     }
     $right++ if defined $right;
@@ -159,9 +163,9 @@ sub _scan {
 }
 
 sub _outline {
-    my ($image, $line, $range, $channels, $left, $right) = @_;
+    my ($image, $line, $range, $channels, $rpos, $left, $right) = @_;
     my @colors = unpack "C*", $image->getscanline(y => $line);
-    my ($outline, $routline, $pos, $rpos) = (0, 0, 0, @colors/4 - 1);
+    my ($outline, $routline, $pos) = (0, 0, 0);
     my @color;
     while (@colors) {
         @color = splice @colors, 0, 4;

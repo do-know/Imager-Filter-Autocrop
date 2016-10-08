@@ -5,7 +5,7 @@ use Imager;
 use Imager::Filter::Autocrop;
 use Getopt::Long;
 
-my $VERSION = '1.22';
+my $VERSION = '1.23';
 
 binmode(STDOUT, ":encoding(UTF-8)");
 if (my $rv = run()) {
@@ -61,7 +61,7 @@ sub usage_and_exit {
 __END__
 
  ==============================
- Imager::Filter::Autocrop v1.22
+ Imager::Filter::Autocrop v1.23
  ==============================
 
  in <file>                        - File to be processed.
