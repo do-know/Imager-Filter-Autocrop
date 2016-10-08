@@ -8,7 +8,7 @@ script **autocrop.pl** is also provided.
 ### COMPATIBILITY
 
 The module should run fine on both Lunux and Windows platforms (under ActiveState Perl
-and Strawberry Perl) with Imager versions 0.91 and up.
+and Strawberry Perl) with Imager versions 0.91 and up. It could work on older versions too (from 0.48 and up), but that has not been tested.
 
 ### INSTALLATION
 
