@@ -3,7 +3,7 @@
 This module extends Imager functionality with the autocrop filter, similar to
 ImageMagick and GraphicsMagick "trim". It does have a few additional features
 as well, such as support for the border or detection-only mode. The command-line
-script autocrop.pl is also provided.
+script **autocrop.pl** is also provided.
 
 ### COMPATIBILITY
 
