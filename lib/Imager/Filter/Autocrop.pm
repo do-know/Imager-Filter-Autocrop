@@ -129,7 +129,7 @@ sub _scan {
     my ($line, $top, $bottom, $left, $right) = (0, 0, 0, undef, undef);
     my ($bpoint, $rpoint) = ($original->{bottom} - 1, $original->{right} - 1);
     my ($outline, $pos, $rpos, @colors, @scanned);
-    my $channels = $image->getchannels < 3 ? 0 : 2;
+    my $channels = $image->getchannels < 3 ? 1 : 3;
     for ($line = $bpoint; $line >= 0; $line--) {
         ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $rpoint);
         last if $outline;
@@ -184,7 +184,7 @@ sub _outline {
 
 sub _out_of_range {
     my ($scanned, $range, $channels) = @_;
-    for (0 .. $channels) { 
+    for (0 .. $channels - 1) {
         if ($scanned->[$_] < $range->[$_]->[0] or $scanned->[$_] > $range->[$_]->[1]) {
             return 1;
         }
