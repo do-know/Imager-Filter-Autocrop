@@ -95,8 +95,10 @@ sub autocrop {
         $color = $img->getpixel(x => 0, y => 0);
     }
     die "AUTOCROP_ERROR_COLOR: Color is not set correctly\n" unless defined $color;
-    my ($r, $g, $b) = $color->rgba; 
-    my @range = ([ $r - $fuzz, $r + $fuzz ], [ $g - $fuzz, $g + $fuzz ], [ $b - $fuzz, $b + $fuzz ]);
+    my ($r, $g, $b) = $color->rgba;
+    my @range = ($r - $fuzz, $r + $fuzz,
+                 $g - $fuzz, $g + $fuzz,
+                 $b - $fuzz, $b + $fuzz);
     my %original = (left => 0, right => $img->getwidth, top => 0, bottom => $img->getheight);
     my $crop = _scan($img, \@range);
     my $bordered = 0;
@@ -128,6 +130,29 @@ sub _scan {
     my ($image, $range) = @_;
     my $channels = $image->getchannels < 3 ? 1 : 3;
     my $getline = $channels == 3 ? '(CCCx)*' : '(Cxxx)*';
+    my $out_of_range = $channels == 3 ? sub {
+        my $scanned = shift;
+        return 1
+            if $scanned->[0] < $range->[0];
+        return 1
+            if $scanned->[0] > $range->[1];
+        return 1
+            if $scanned->[1] < $range->[2];
+        return 1
+            if $scanned->[1] > $range->[3];
+        return 1
+            if $scanned->[2] < $range->[4];
+        return 1
+            if $scanned->[2] > $range->[5];
+        return 0;
+    } : sub {
+        my $scanned = shift;
+        return 1
+            if $scanned->[0] < $range->[0];
+        return 1
+            if $scanned->[0] > $range->[1];
+        return 0;
+    };
 
     # First, take as many complete lines off the bottom as is possible:
     my $bottom = $image->getheight;
@@ -135,7 +160,7 @@ sub _scan {
         my @colors = unpack $getline, $image->getscanline(y => $bottom);
         while (@colors) {
             last
-                if _out_of_range(\@colors, $range, $channels);
+                if $out_of_range->(\@colors, $range);
             splice @colors, 0, $channels;
         }
         last
@@ -152,7 +177,7 @@ sub _scan {
         my @colors = unpack $getline, $image->getscanline(y => $top);
         while (@colors) {
             last
-                if _out_of_range(\@colors, $range, $channels);
+                if $out_of_range->(\@colors, $range);
             splice @colors, 0, $channels;
         }
         last
@@ -171,7 +196,7 @@ sub _scan {
         while (@colors) {
             last
                 if $this_row_left == $left;
-            if (_out_of_range(\@colors, $range, $channels)) {
+            if ($out_of_range->(\@colors, $range)) {
                 $left = $this_row_left;
                 last;
             }
@@ -183,7 +208,7 @@ sub _scan {
             last
                 if $this_row_right == $right;
             my @color = splice @colors, -$channels, $channels;
-            if (_out_of_range(\@color, $range, $channels)) {
+            if ($out_of_range->(\@color, $range)) {
                 $right = $this_row_right;
                 last;
             }
@@ -195,16 +220,6 @@ sub _scan {
     ++$bottom;
 
     return { top => $top, bottom => $bottom, left => $left, right => $right };
-}
-
-sub _out_of_range {
-    my ($scanned, $range, $channels) = @_;
-    for (0 .. $channels - 1) {
-        if ($scanned->[$_] < $range->[$_]->[0] or $scanned->[$_] > $range->[$_]->[1]) {
-            return 1;
-        }
-    }
-    return 0;
 }
 
 sub import {
