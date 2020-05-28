@@ -31,6 +31,53 @@ foreach my $type (keys %{$images}) {
     }
 }
 
+my $borders = Imager->new(xsize => 256, ysize => 192, channels => 3);
+$borders->box(filled => 1, color => "#FFFFFF");
+my %rect = (
+    left => 6,
+    top => 9,
+    right => 42,
+    bottom => 54
+);
+$borders->box(color => '#ff9900', filled => 1,
+              xmin => $rect{left}, xmax=> $rect{right},
+              ymin => $rect{top}, ymax=> $rect{bottom});
+
+my %detect;
+my $cropped = $borders->filter(type => 'autocrop_test', detect => \%detect);
+isa_ok($cropped, 'Imager', "no error");
+
+# Seems that how 'crop' and 'rect' treat coordinates is slightly inconsistent:
+++$rect{bottom};
+++$rect{right};
+is_deeply(\%detect, \%rect, 'crop test, no border');
+
+undef %detect;
+$cropped = $borders->filter(type => 'autocrop_test', detect => \%detect,
+                            border => 3);
+isa_ok($cropped, 'Imager', "no error");
+
+$rect{$_} += 3
+    for qw(right bottom);
+$rect{$_} -= 3
+    for qw(top left);
+is_deeply(\%detect, \%rect, 'crop test, border => 3');
+
+undef %detect;
+$cropped = $borders->filter(type => 'autocrop_test', detect => \%detect,
+                            border => 212);
+isa_ok($cropped, 'Imager', "no error");
+is_deeply(\%detect, { bottom => 192, left => 0, right => 255, top => 0 },
+          'crop test, border => 212');
+
+undef %detect;
+$cropped = $borders->filter(type => 'autocrop_test', detect => \%detect,
+                            border => 213);
+is($cropped, undef, "expect an error for border => 213");
+is($borders->errstr, 'AUTOCROP_ERROR_NOCROP: Nothing to crop',
+   "expected error for border => 213");
+is_deeply(\%detect, {}, 'crop test, border => 213');
+
 diag( "Testing Imager::Filter::Autocrop $Imager::Filter::Autocrop::VERSION, Perl $], $^X" );
 
 sub load {
