@@ -214,6 +214,9 @@ sub _scan {
             }
             --$this_row_right;
         }
+        # Nothing left to crop?
+        last
+            if $this_row_left == 0 && $this_row_right == $width;
         ++$current;
     }
 
