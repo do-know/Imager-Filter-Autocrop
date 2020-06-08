@@ -95,10 +95,12 @@ sub autocrop {
         $color = $img->getpixel(x => 0, y => 0);
     }
     die "AUTOCROP_ERROR_COLOR: Color is not set correctly\n" unless defined $color;
-    my ($r, $g, $b) = $color->rgba; 
-    my @range = ([ $r - $fuzz, $r + $fuzz ], [ $g - $fuzz, $g + $fuzz ], [ $b - $fuzz, $b + $fuzz ]);
+    my ($r, $g, $b) = $color->rgba;
+    my @range = ($r - $fuzz, $r + $fuzz,
+                 $g - $fuzz, $g + $fuzz,
+                 $b - $fuzz, $b + $fuzz);
     my %original = (left => 0, right => $img->getwidth, top => 0, bottom => $img->getheight);
-    my $crop = _scan($img, \@range, \%original);
+    my $crop = _scan($img, \@range);
     my $bordered = 0;
     for (keys %original) { 
         if ($original{$_}) {
@@ -125,71 +127,102 @@ sub autocrop {
 } 
 
 sub _scan {
-    my ($image, $range, $original) = @_;
-    my ($line, $top, $bottom, $left, $right) = (0, 0, 0, undef, undef);
-    my ($bpoint, $rpoint) = ($original->{bottom} - 1, $original->{right} - 1);
-    my ($outline, $pos, $rpos, @colors, @scanned);
-    my $channels = $image->getchannels < 3 ? 0 : 2;
-    for ($line = $bpoint; $line >= 0; $line--) {
-        ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $rpoint);
-        last if $outline;
+    my ($image, $range) = @_;
+    my $channels = $image->getchannels < 3 ? 1 : 3;
+    my $getline = $channels == 3 ? '(CCCx)*' : '(Cxxx)*';
+    my $out_of_range = $channels == 3 ? sub {
+        my $scanned = shift;
+        return 1
+            if $scanned->[0] < $range->[0];
+        return 1
+            if $scanned->[0] > $range->[1];
+        return 1
+            if $scanned->[1] < $range->[2];
+        return 1
+            if $scanned->[1] > $range->[3];
+        return 1
+            if $scanned->[2] < $range->[4];
+        return 1
+            if $scanned->[2] > $range->[5];
+        return 0;
+    } : sub {
+        my $scanned = shift;
+        return 1
+            if $scanned->[0] < $range->[0];
+        return 1
+            if $scanned->[0] > $range->[1];
+        return 0;
+    };
+
+    # First, take as many complete lines off the bottom as is possible:
+    my $bottom = $image->getheight;
+    while (--$bottom >= 0) {
+        my @colors = unpack $getline, $image->getscanline(y => $bottom);
+        while (@colors) {
+            last
+                if $out_of_range->(\@colors, $range);
+            splice @colors, 0, $channels;
+        }
+        last
+            if @colors;
     }
-    die "AUTOCROP_ERROR_BLANK: Image looks blank\n" unless $outline;
-    $bottom = $line;
-    ($left, $right) = ($pos, $rpos) if $outline;
-    for ($line = 0; $line < $bottom; $line++) {
-        # NB - don't use left/right boundaries here
-        ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $rpoint);
-        last if $outline;
+    die "AUTOCROP_ERROR_BLANK: Image looks blank\n"
+        if $bottom < 0;
+
+    # Then, start from the top, removing complete lines.
+    # When we fail, we could remember how far in we got but I think that this
+    # adds too much complexity below. (it would be @colors / $channels)
+    my $top = 0;
+    while ($top <= $bottom) {
+        my @colors = unpack $getline, $image->getscanline(y => $top);
+        while (@colors) {
+            last
+                if $out_of_range->(\@colors, $range);
+            splice @colors, 0, $channels;
+        }
+        last
+            if @colors;
+        ++$top;
     }
-    $top = $line;
-    if ($outline) {
-        $left = $pos if (!defined $left or $pos < $left);
-        $right = $rpos if (!defined $right or $rpos > $right);
-    }
-    unless (defined $left and defined $right and $left == 0 and $right == $rpoint) {
-        for ($line = $top + 1; $line < $bottom; $line++) {
-            ($outline, $pos, $rpos) = _outline($image, $line, $range, $channels, $rpoint, $left, $right);
-            if ($outline) {
-                $left = $pos if (!defined $left or $pos < $left);
-                $right = $rpos if (!defined $right or $rpos > $right);
-                last if (defined $left and defined $right and $left == 0 and $right == $rpoint);
+
+    my $width = $image->getwidth;
+    my $left = $width;
+    my $right = 0;
+    my $current = $top;
+
+    while ($current <= $bottom) {
+        my @colors = unpack $getline, $image->getscanline(y => $current);
+        my $this_row_left = 0;
+        while (@colors) {
+            last
+                if $this_row_left == $left;
+            if ($out_of_range->(\@colors, $range)) {
+                $left = $this_row_left;
+                last;
             }
+            ++$this_row_left;
+            splice @colors, 0, $channels;
         }
+        my $this_row_right = $width;
+        while (@colors) {
+            last
+                if $this_row_right == $right;
+            my @color = splice @colors, -$channels, $channels;
+            if ($out_of_range->(\@color, $range)) {
+                $right = $this_row_right;
+                last;
+            }
+            --$this_row_right;
+        }
+        # Nothing left to crop?
+        last
+            if $this_row_left == 0 && $this_row_right == $width;
+        ++$current;
     }
-    $right++ if defined $right;
-    $bottom++ if defined $bottom;
+
+    ++$bottom;
+
     return { top => $top, bottom => $bottom, left => $left, right => $right };
-}
-
-sub _outline {
-    my ($image, $line, $range, $channels, $rpos, $left, $right) = @_;
-    my @colors = unpack "C*", $image->getscanline(y => $line);
-    my ($outline, $routline, $pos) = (0, 0, 0);
-    my @color;
-    while (@colors) {
-        @color = splice @colors, 0, 4;
-        $outline = _out_of_range(\@color, $range, $channels);
-        last if ($outline or (defined $left and $pos >= $left));
-        $pos++;
-    }
-    while (@colors) {
-        @color = splice @colors, -4, 4;
-        $routline = _out_of_range(\@color, $range, $channels);
-        last if ($routline or (defined $right and $rpos <= $right));
-        $rpos--;
-    }
-    return ($outline||$routline, $pos, $rpos);
-}
-
-sub _out_of_range {
-    my ($scanned, $range, $channels) = @_;
-    for (0 .. $channels) { 
-        if ($scanned->[$_] < $range->[$_]->[0] or $scanned->[$_] > $range->[$_]->[1]) {
-            return 1;
-        }
-    }
-    return 0;
 }
 
 sub import {
